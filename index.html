@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Traffic Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #e0f7f4;
+    }
+    h1, h3 {
+      text-align: center;
+      color: #222;
+    }
+    .lane-grid {
+      display: grid;
+      grid-template-areas:
+        ".    north    ."
+        "west center east"
+        ".    south    .";
+      gap: 20px;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .lane-card {
+      width: 220px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #ffffff;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+      text-align: center;
+      padding-bottom: 10px;
+    }
+    .north { grid-area: north; }
+    .east { grid-area: east; }
+    .south { grid-area: south; }
+    .west { grid-area: west; }
+    .lane-top-bar { height: 6px; }
+    .lane-title { font-weight: bold; margin: 10px 0; color: #333; }
+    .light-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      margin: 10px auto;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.3; }
+      100% { opacity: 1; }
+    }
+    .arrow-animation {
+      font-size: 24px;
+      margin-top: 10px;
+    }
+    .down { animation: moveDown 1s linear infinite; }
+    .up { animation: moveUp 1s linear infinite; }
+    .left { animation: moveLeft 1s linear infinite; }
+    .right { animation: moveRight 1s linear infinite; }
+
+    @keyframes moveDown {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(5px); }
+      100% { transform: translateY(0); }
+    }
+    @keyframes moveUp {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+      100% { transform: translateY(0); }
+    }
+    @keyframes moveLeft {
+      0% { transform: translateX(0); }
+      50% { transform: translateX(-5px); }
+      100% { transform: translateX(0); }
+    }
+    @keyframes moveRight {
+      0% { transform: translateX(0); }
+      50% { transform: translateX(5px); }
+      100% { transform: translateX(0); }
+    }
+    .btn-group {
+      margin-top: 8px;
+    }
+    .btn-group button {
+      margin: 2px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      border: none;
+    }
+    .green-btn { background: #28a745; color: white; }
+    .red-btn { background: #dc3545; color: white; }
+    .reset-btn { background: #007bff; color: white; }
+  </style>
+</head>
+<body>
+  <h1>Smart Traffic Control System</h1>
+  <h3>Lane-wise Green Signal Management</h3>
+  <div class="lane-grid" id="laneGrid"></div>
+
+  <script>
+    const lanePositions = {
+      1: 'north',
+      2: 'east',
+      3: 'south',
+      4: 'west'
+    };
+
+    const arrowMap = {
+      1: { dir: '⬇️', cls: 'down' },
+      2: { dir: '⬅️', cls: 'left' },
+      3: { dir: '⬆️', cls: 'up' },
+      4: { dir: '➡️', cls: 'right' }
+    };
+
+    let servedLanes = new Set();
+    let previousGreenLane = null;
+    let allLaneData = {};
+    let manualOverride = {
+      1: null,
+      2: null,
+      3: null,
+      4: null
+    };
+
+    async function fetchTrafficData() {
+      const res = await fetch("https://wrf44zs6hd.execute-api.ca-central-1.amazonaws.com/prod/traffic/Junction-A");
+      const data = await res.json();
+      return data.lane_status.reduce((acc, lane) => {
+        acc[lane.lane] = lane.vehicle_count;
+        return acc;
+      }, {});
+    }
+
+    function getGreenTime(vehicleCount) {
+      if (vehicleCount < 10) return 10;
+      if (vehicleCount <= 25) return 20;
+      return 40;
+    }
+
+    function setManualOverride(lane, color) {
+      manualOverride[lane] = color;
+      renderLanes(allLaneData, null, null);
+    }
+
+    function resetOverride(lane) {
+      manualOverride[lane] = null;
+      renderLanes(allLaneData, null, null);
+    }
+
+    function renderLanes(data, currentGreen = null, countdown = null) {
+      const container = document.getElementById("laneGrid");
+      container.innerHTML = "";
+
+      for (let lane = 1; lane <= 4; lane++) {
+        const count = data[lane] || 0;
+        let color = 'red';
+        let statusText = 'RED';
+        let arrowHTML = '';
+
+        if (manualOverride[lane]) {
+          color = manualOverride[lane];
+          statusText = manualOverride[lane].toUpperCase() + ' (MANUAL)';
+        } else if (lane === currentGreen) {
+          color = 'green';
+          statusText = `GREEN (${countdown}s)`;
+        }
+
+        if (color === 'green') {
+          const arrow = arrowMap[lane];
+          arrowHTML = `<div class="arrow-animation ${arrow.cls}">${arrow.dir.repeat(3)}</div>`;
+        }
+
+        container.innerHTML += `
+          <div class="lane-card ${lanePositions[lane]}">
+            <div class="lane-top-bar" style="background-color: ${color};"></div>
+            <div class="lane-title">Lane ${lane}</div>
+            <div>Vehicles: <strong>${count}</strong></div>
+            <div class="light-dot" style="background-color: ${color};"></div>
+            <div style="color: ${color}; font-weight: bold;">${statusText}</div>
+            ${arrowHTML}
+            <div class="btn-group">
+              <button class="green-btn" onclick="setManualOverride(${lane}, 'green')">Set Green</button>
+              <button class="red-btn" onclick="setManualOverride(${lane}, 'red')">Set Red</button>
+              <button class="reset-btn" onclick="resetOverride(${lane})">Reset</button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    async function startCycle() {
+      servedLanes.clear();
+      allLaneData = await fetchTrafficData();
+
+      const laneOrder = Object.keys(allLaneData)
+        .map(l => parseInt(l))
+        .filter(l => l !== previousGreenLane)
+        .sort((a, b) => allLaneData[b] - allLaneData[a]);
+
+      if (previousGreenLane !== null) laneOrder.push(previousGreenLane);
+
+      for (const lane of laneOrder) {
+        if (manualOverride[lane]) continue;
+
+        const greenDuration = getGreenTime(allLaneData[lane]);
+        let secondsLeft = greenDuration;
+
+        await new Promise(resolve => {
+          const interval = setInterval(() => {
+            renderLanes(allLaneData, lane, secondsLeft);
+            secondsLeft--;
+            if (secondsLeft < 0) {
+              clearInterval(interval);
+              servedLanes.add(lane);
+              previousGreenLane = lane;
+              resolve();
+            }
+          }, 1000);
+        });
+      }
+
+      setTimeout(() => location.reload(), 1000);
+    }
+
+    window.setManualOverride = setManualOverride;
+    window.resetOverride = resetOverride;
+
+    startCycle();
+  </script>
+</body>
+</html>
